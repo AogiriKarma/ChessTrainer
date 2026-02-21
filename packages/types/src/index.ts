@@ -99,3 +99,51 @@ export interface AnalysisResult {
   depth: number
   pv: string[]
 }
+
+export interface MultiPVResult {
+  rank: number
+  bestMove: string
+  eval: number
+  depth: number
+  pv: string[]
+  mate?: number
+}
+
+// === Exercise Solution v2 ===
+
+export type MoveQuality = 'best' | 'good' | 'acceptable'
+
+export interface AcceptableMove {
+  uci: string
+  san: string
+  eval: number
+  rank: number
+  quality: MoveQuality
+}
+
+export interface ExerciseStep {
+  role: 'player' | 'opponent'
+  bestMove: AcceptableMove
+  alternatives: AcceptableMove[]
+  fen: string
+}
+
+export interface ExerciseExplanation {
+  mistakeSummary: string
+  bestMoveReason: string
+  playedMoveWeakness: string
+  tip: string
+  theme?: TacticalTheme
+  themeLabel?: string
+  evalContext: string
+}
+
+export interface ExerciseSolution {
+  version: 2
+  steps: ExerciseStep[]
+  explanation: ExerciseExplanation
+  evalBefore: number
+  evalAfter: number
+  playedMove: string
+  acceptanceThreshold: number
+}

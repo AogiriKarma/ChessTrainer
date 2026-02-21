@@ -94,6 +94,8 @@ export async function analyzeGameProcessor(job: Job<AnalyzeGamePayload>) {
       bestResult.bestMove,
       evalBefore,
       evalAfter,
+      bestResult.pv,
+      bestResult.mate,
     )
 
     const mistake = await prisma.mistake.create({
@@ -115,6 +117,11 @@ export async function analyzeGameProcessor(job: Job<AnalyzeGamePayload>) {
       type: classification.type,
       fen: move.fenBefore,
       bestMove: bestResult.bestMove,
+      playedMove: move.san,
+      evalBefore,
+      evalAfter,
+      theme: classification.theme ?? undefined,
+      bestMovePV: bestResult.pv,
     })
 
     mistakeCount++

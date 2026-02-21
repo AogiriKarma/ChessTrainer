@@ -121,6 +121,93 @@ export async function analyzePosition(
   })
 }
 
+export interface MultiPVResult {
+  rank: number
+  bestMove: string
+  eval: number
+  depth: number
+  pv: string[]
+  mate?: number
+}
+
+export async function analyzePositionMultiPV(
+  fen: string,
+  depth = DEFAULT_DEPTH,
+  numPV = 5,
+): Promise<MultiPVResult[]> {
+  const engine = await acquireEngine()
+  const proc = engine.process
+
+  return new Promise((resolve, reject) => {
+    const results = new Map<number, MultiPVResult>()
+
+    const timeout = setTimeout(() => {
+      // Reset MultiPV before releasing
+      proc.stdin?.write('setoption name MultiPV value 1\n')
+      releaseEngine(engine)
+      reject(new Error('Stockfish MultiPV analysis timeout'))
+    }, 60000)
+
+    const onData = (data: Buffer) => {
+      const lines = data.toString().split('\n')
+      for (const line of lines) {
+        if (line.includes('score') && line.includes('multipv')) {
+          const pvIdxMatch = line.match(/multipv (\d+)/)
+          const cpMatch = line.match(/score cp (-?\d+)/)
+          const mateMatch = line.match(/score mate (-?\d+)/)
+          const pvMatch = line.match(/ pv (.+)/)
+          const depthMatch = line.match(/depth (\d+)/)
+
+          if (!pvIdxMatch) continue
+          const rank = parseInt(pvIdxMatch[1])
+          const lineDepth = depthMatch ? parseInt(depthMatch[1]) : 0
+
+          let evalScore = 0
+          let mate: number | undefined
+
+          if (cpMatch) {
+            evalScore = parseInt(cpMatch[1])
+          }
+          if (mateMatch) {
+            mate = parseInt(mateMatch[1])
+            evalScore = mate > 0 ? 10000 - mate : -10000 - mate
+          }
+
+          const pv = pvMatch ? pvMatch[1].trim().split(' ') : []
+
+          results.set(rank, {
+            rank,
+            bestMove: pv[0] || '',
+            eval: evalScore,
+            depth: lineDepth,
+            pv,
+            mate,
+          })
+        }
+
+        if (line.startsWith('bestmove')) {
+          proc.stdout?.removeListener('data', onData)
+          clearTimeout(timeout)
+          // Reset MultiPV before releasing
+          proc.stdin?.write('setoption name MultiPV value 1\n')
+          releaseEngine(engine)
+
+          const sorted = Array.from(results.values())
+            .filter((r) => r.bestMove)
+            .sort((a, b) => a.rank - b.rank)
+          resolve(sorted)
+        }
+      }
+    }
+
+    proc.stdout?.on('data', onData)
+    proc.stdin?.write(`setoption name MultiPV value ${numPV}\n`)
+    proc.stdin?.write('isready\n')
+    proc.stdin?.write(`position fen ${fen}\n`)
+    proc.stdin?.write(`go depth ${depth}\n`)
+  })
+}
+
 export async function shutdownPool(): Promise<void> {
   for (const engine of pool) {
     engine.process.stdin?.write('quit\n')

@@ -10,11 +10,31 @@ interface Mistake {
   moveNumber: number
 }
 
+interface ExerciseExplanation {
+  mistakeSummary: string
+  bestMoveReason: string
+  playedMoveWeakness: string
+  tip: string
+  theme?: string
+  themeLabel?: string
+  evalContext: string
+}
+
+interface RichSolution {
+  version: 2
+  steps: any[]
+  explanation: ExerciseExplanation
+  evalBefore: number
+  evalAfter: number
+  playedMove: string
+  acceptanceThreshold: number
+}
+
 interface Exercise {
   id: string
   type: string
   fenStart: string
-  solution: { moves?: string[]; bestMove?: string; correctMove?: string }
+  solution: any
   completed: boolean
   attempts: number
   mistake: Mistake
@@ -125,10 +145,20 @@ export default function Training() {
     fetchExercises()
   }
 
+  const isV2 = (exercise: Exercise): exercise is Exercise & { solution: RichSolution } => {
+    return exercise.solution?.version === 2
+  }
+
   const getSolutionMoves = (exercise: Exercise): string[] => {
-    if (exercise.solution.moves) return exercise.solution.moves
-    if (exercise.solution.bestMove) return [exercise.solution.bestMove]
-    if (exercise.solution.correctMove) return [exercise.solution.correctMove]
+    const sol = exercise.solution
+    if (sol?.version === 2) {
+      return sol.steps
+        .filter((s: any) => s.role === 'player')
+        .map((s: any) => s.bestMove.uci)
+    }
+    if (sol?.moves) return sol.moves
+    if (sol?.bestMove) return [sol.bestMove]
+    if (sol?.correctMove) return [sol.correctMove]
     return []
   }
 
@@ -183,12 +213,29 @@ export default function Training() {
             <PuzzleBoard
               key={exercise.id}
               fen={exercise.fenStart}
-              solution={moves}
+              solution={!isV2(exercise) ? moves : undefined}
+              richSolution={isV2(exercise) ? exercise.solution : undefined}
               onSolved={handleSolved}
               onFailed={handleFailed}
             />
           ) : (
             <p className="text-gray-400">Pas de solution pour cet exercice.</p>
+          )}
+
+          {/* Explication après tentative */}
+          {currentResult !== 'playing' && isV2(exercise) && exercise.solution.explanation && (
+            <div className="bg-gray-900 rounded-xl p-5 max-w-md space-y-3 text-left">
+              {exercise.solution.explanation.themeLabel && (
+                <span className="text-xs bg-blue-900 text-blue-300 px-2 py-1 rounded">
+                  {exercise.solution.explanation.themeLabel}
+                </span>
+              )}
+              <p className="text-white font-medium">{exercise.solution.explanation.mistakeSummary}</p>
+              <p className="text-red-400 text-sm">{exercise.solution.explanation.playedMoveWeakness}</p>
+              <p className="text-green-400 text-sm">{exercise.solution.explanation.bestMoveReason}</p>
+              <p className="text-gray-500 text-xs italic">{exercise.solution.explanation.tip}</p>
+              <p className="text-gray-600 text-xs">{exercise.solution.explanation.evalContext}</p>
+            </div>
           )}
 
           {/* Bouton suivant */}
