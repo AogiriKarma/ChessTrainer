@@ -9,7 +9,7 @@ export interface ParsedMove {
 }
 
 export interface ParsedGame {
-  headers: Record<string, string>
+  headers: Record<string, string | null>
   moves: ParsedMove[]
 }
 
