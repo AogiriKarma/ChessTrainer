@@ -19,10 +19,11 @@ export default function PuzzleBoard({ fen, solution, onSolved, onFailed }: Puzzl
 
   // Le joueur joue les coups pairs (0, 2, 4...), l'adversaire les impairs
   const isPlayerTurn = moveIndex % 2 === 0
-  const orientation = useMemo(() => {
+  const playerColor = useMemo(() => {
     const chess = new Chess(fen)
-    return chess.turn() === 'w' ? 'white' : 'black'
+    return chess.turn() // le joueur joue la couleur au trait dans la position initiale
   }, [fen])
+  const orientation = playerColor === 'w' ? 'white' : 'black'
 
   const highlightMove = useCallback((from: string, to: string, color: string) => {
     setHighlightSquares({
@@ -127,11 +128,12 @@ export default function PuzzleBoard({ fen, solution, onSolved, onFailed }: Puzzl
           id="puzzle-board"
           position={game.fen()}
           onPieceDrop={onDrop}
-          boardOrientation={orientation as 'white' | 'black'}
+          boardOrientation={orientation}
           boardWidth={480}
           customSquareStyles={highlightSquares}
           animationDuration={200}
           arePiecesDraggable={status === 'playing' && isPlayerTurn}
+          isDraggablePiece={({ piece }) => piece.startsWith(playerColor === 'w' ? 'w' : 'b')}
         />
 
         {status !== 'playing' && (
