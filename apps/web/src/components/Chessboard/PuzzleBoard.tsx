@@ -158,7 +158,7 @@ export default function PuzzleBoard({ fen, solution, onSolved, onFailed }: Puzzl
       </div>
 
       <div className="text-sm text-gray-400">
-        {status === 'playing' && isPlayerTurn && 'À toi de jouer — trouve le meilleur coup'}
+        {status === 'playing' && isPlayerTurn && `Trait aux ${playerColor === 'w' ? 'blancs' : 'noirs'} — trouve le meilleur coup`}
         {status === 'playing' && !isPlayerTurn && 'Réponse adverse...'}
       </div>
     </div>
