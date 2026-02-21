@@ -1,0 +1,79 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Player {
+  id        String   @id @default(uuid()) @db.Uuid
+  lichessId String?  @unique @map("lichess_id")
+  chesscomId String? @unique @map("chesscom_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  games          Game[]
+  weaknessProfile WeaknessProfile?
+
+  @@map("players")
+}
+
+model Game {
+  id         String    @id @default(uuid()) @db.Uuid
+  playerId   String    @map("player_id") @db.Uuid
+  pgn        String
+  source     String    // 'lichess' | 'chesscom'
+  analyzed   Boolean   @default(false)
+  analyzedAt DateTime? @map("analyzed_at")
+
+  player   Player    @relation(fields: [playerId], references: [id])
+  mistakes Mistake[]
+
+  @@map("games")
+}
+
+model Mistake {
+  id         String  @id @default(uuid()) @db.Uuid
+  gameId     String  @map("game_id") @db.Uuid
+  moveNumber Int     @map("move_number")
+  fen        String
+  playedMove String  @map("played_move")
+  bestMove   String  @map("best_move")
+  type       String  // MistakeType
+  theme      String? // TacticalTheme
+  evalLoss   Int     @map("eval_loss")
+
+  game     Game      @relation(fields: [gameId], references: [id])
+  exercise Exercise?
+
+  @@map("mistakes")
+}
+
+model Exercise {
+  id        String    @id @default(uuid()) @db.Uuid
+  mistakeId String    @unique @map("mistake_id") @db.Uuid
+  type      String    // ExerciseType
+  fenStart  String    @map("fen_start")
+  solution  Json
+  completed Boolean   @default(false)
+  attempts  Int       @default(0)
+  solvedAt  DateTime? @map("solved_at")
+
+  mistake Mistake @relation(fields: [mistakeId], references: [id])
+
+  @@map("exercises")
+}
+
+model WeaknessProfile {
+  playerId         String   @id @map("player_id") @db.Uuid
+  tacticalScore    Float    @map("tactical_score")
+  endgameScore     Float    @map("endgame_score")
+  openingScore     Float    @map("opening_score")
+  positionalScore  Float    @map("positional_score")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  player Player @relation(fields: [playerId], references: [id])
+
+  @@map("weakness_profiles")
+}
