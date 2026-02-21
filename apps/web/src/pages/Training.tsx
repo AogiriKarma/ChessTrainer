@@ -20,13 +20,6 @@ interface Exercise {
   mistake: Mistake
 }
 
-const TYPE_LABELS: Record<string, string> = {
-  puzzle: 'Puzzle tactique',
-  opening_drill: "Drill d'ouverture",
-  endgame: 'Finale',
-  guided_analysis: 'Analyse guidée',
-}
-
 const MISTAKE_LABELS: Record<string, string> = {
   TACTICAL_MISS: 'Tactique ratée',
   OPENING_DEVIATION: "Déviation d'ouverture",
@@ -35,11 +28,26 @@ const MISTAKE_LABELS: Record<string, string> = {
   INACCURACY: 'Imprécision',
 }
 
+const SEVERITY_LABEL = (loss: number) =>
+  loss >= 200 ? 'Blunder' : loss >= 80 ? 'Mistake' : 'Inaccuracy'
+
+const SEVERITY_COLOR = (loss: number) =>
+  loss >= 200
+    ? 'bg-red-900 text-red-300'
+    : loss >= 80
+      ? 'bg-orange-900 text-orange-300'
+      : 'bg-yellow-900 text-yellow-300'
+
 export default function Training() {
   const [exercises, setExercises] = useState<Exercise[]>([])
-  const [current, setCurrent] = useState<Exercise | null>(null)
   const [loading, setLoading] = useState(true)
-  const [filter, setFilter] = useState<string>('all')
+
+  // Session state
+  const [sessionQueue, setSessionQueue] = useState<Exercise[]>([])
+  const [sessionIndex, setSessionIndex] = useState(0)
+  const [sessionActive, setSessionActive] = useState(false)
+  const [sessionResults, setSessionResults] = useState<Array<{ id: string; solved: boolean }>>([])
+  const [currentResult, setCurrentResult] = useState<'playing' | 'solved' | 'failed'>('playing')
 
   const fetchExercises = useCallback(async () => {
     try {
@@ -56,15 +64,24 @@ export default function Training() {
     fetchExercises()
   }, [fetchExercises])
 
-  const filtered = exercises.filter((e) => {
-    if (filter === 'all') return true
-    if (filter === 'unsolved') return !e.completed
-    if (filter === 'solved') return e.completed
-    return e.mistake.type === filter
-  })
+  const unsolvedCount = exercises.filter((e) => !e.completed).length
+  const solvedCount = exercises.filter((e) => e.completed).length
 
-  const startExercise = (exercise: Exercise) => {
-    setCurrent(exercise)
+  const startSession = (count: number) => {
+    // Trier par priorité : blunders d'abord, puis mistakes, puis inaccuracies
+    // Au sein d'un même niveau : non résolus d'abord, puis ceux avec le plus de perte
+    const sorted = [...exercises]
+      .filter((e) => !e.completed)
+      .sort((a, b) => b.mistake.evalLoss - a.mistake.evalLoss)
+      .slice(0, count)
+
+    if (sorted.length === 0) return
+
+    setSessionQueue(sorted)
+    setSessionIndex(0)
+    setSessionResults([])
+    setCurrentResult('playing')
+    setSessionActive(true)
   }
 
   const submitAttempt = async (exerciseId: string, solved: boolean) => {
@@ -73,11 +90,39 @@ export default function Training() {
         method: 'POST',
         body: JSON.stringify({ solved }),
       })
-      // Refresh la liste
-      fetchExercises()
     } catch (err) {
       console.error('Failed to submit attempt', err)
     }
+  }
+
+  const handleSolved = () => {
+    const exercise = sessionQueue[sessionIndex]
+    setCurrentResult('solved')
+    setSessionResults((prev) => [...prev, { id: exercise.id, solved: true }])
+    submitAttempt(exercise.id, true)
+  }
+
+  const handleFailed = () => {
+    const exercise = sessionQueue[sessionIndex]
+    setCurrentResult('failed')
+    setSessionResults((prev) => [...prev, { id: exercise.id, solved: false }])
+    submitAttempt(exercise.id, false)
+  }
+
+  const nextExercise = () => {
+    if (sessionIndex + 1 >= sessionQueue.length) {
+      // Session terminée
+      setSessionActive(false)
+      fetchExercises()
+      return
+    }
+    setSessionIndex((i) => i + 1)
+    setCurrentResult('playing')
+  }
+
+  const endSession = () => {
+    setSessionActive(false)
+    fetchExercises()
   }
 
   const getSolutionMoves = (exercise: Exercise): string[] => {
@@ -87,61 +132,112 @@ export default function Training() {
     return []
   }
 
-  if (current) {
-    const moves = getSolutionMoves(current)
+  // === SESSION VIEW ===
+  if (sessionActive && sessionQueue.length > 0) {
+    const exercise = sessionQueue[sessionIndex]
+    const moves = getSolutionMoves(exercise)
+    const solved = sessionResults.filter((r) => r.solved).length
+    const failed = sessionResults.filter((r) => !r.solved).length
+    const isLast = sessionIndex + 1 >= sessionQueue.length
+    const isFinished = isLast && currentResult !== 'playing'
 
     return (
       <div className="min-h-screen bg-gray-950 text-white">
-        <header className="border-b border-gray-800 px-6 py-4 flex items-center justify-between">
-          <button
-            onClick={() => setCurrent(null)}
-            className="text-gray-400 hover:text-white transition"
-          >
-            Retour aux exercices
+        {/* Progress bar */}
+        <div className="h-1 bg-gray-800">
+          <div
+            className="h-full bg-white transition-all duration-300"
+            style={{ width: `${((sessionIndex + (currentResult !== 'playing' ? 1 : 0)) / sessionQueue.length) * 100}%` }}
+          />
+        </div>
+
+        <header className="px-6 py-4 flex items-center justify-between">
+          <button onClick={endSession} className="text-gray-500 hover:text-white transition text-sm">
+            Quitter la session
           </button>
-          <span className="text-sm text-gray-500">
-            {TYPE_LABELS[current.type] || current.type} — coup {current.mistake.moveNumber}
+          <span className="text-sm text-gray-400">
+            {sessionIndex + 1} / {sessionQueue.length}
           </span>
+          <div className="flex gap-3 text-sm">
+            <span className="text-green-400">{solved} ok</span>
+            <span className="text-red-400">{failed} raté</span>
+          </div>
         </header>
 
-        <main className="flex flex-col items-center py-8 gap-6">
-          <div className="flex items-center gap-4">
-            <span
-              className={`px-3 py-1 rounded-full text-xs font-medium ${
-                current.mistake.type === 'TACTICAL_MISS'
-                  ? 'bg-red-900 text-red-300'
-                  : current.mistake.type === 'OPENING_DEVIATION'
-                    ? 'bg-blue-900 text-blue-300'
-                    : current.mistake.type === 'ENDGAME_ERROR'
-                      ? 'bg-purple-900 text-purple-300'
-                      : 'bg-yellow-900 text-yellow-300'
-              }`}
-            >
-              {MISTAKE_LABELS[current.mistake.type] || current.mistake.type}
+        <main className="flex flex-col items-center py-6 gap-6">
+          {/* Info exercice */}
+          <div className="flex items-center gap-3">
+            <span className={`px-3 py-1 rounded-full text-xs font-medium ${SEVERITY_COLOR(exercise.mistake.evalLoss)}`}>
+              {SEVERITY_LABEL(exercise.mistake.evalLoss)}
             </span>
-            {current.mistake.theme && (
-              <span className="text-sm text-gray-400">{current.mistake.theme}</span>
-            )}
-            <span className="text-sm text-gray-500">
-              -{current.mistake.evalLoss}cp
+            <span className="text-sm text-gray-400">
+              {MISTAKE_LABELS[exercise.mistake.type] || exercise.mistake.type}
+            </span>
+            <span className="text-sm text-gray-600">
+              coup {exercise.mistake.moveNumber} — {(exercise.mistake.evalLoss / 100).toFixed(1)} pion{exercise.mistake.evalLoss >= 200 ? 's' : ''} perdu{exercise.mistake.evalLoss >= 200 ? 's' : ''}
             </span>
           </div>
 
+          {/* Échiquier */}
           {moves.length > 0 ? (
             <PuzzleBoard
-              fen={current.fenStart}
+              key={exercise.id}
+              fen={exercise.fenStart}
               solution={moves}
-              onSolved={() => submitAttempt(current.id, true)}
-              onFailed={() => submitAttempt(current.id, false)}
+              onSolved={handleSolved}
+              onFailed={handleFailed}
             />
           ) : (
-            <p className="text-gray-400">Pas de solution disponible pour cet exercice.</p>
+            <p className="text-gray-400">Pas de solution pour cet exercice.</p>
+          )}
+
+          {/* Bouton suivant */}
+          {currentResult !== 'playing' && (
+            <button
+              onClick={isFinished ? endSession : nextExercise}
+              className="bg-white text-gray-900 font-semibold px-6 py-3 rounded-lg hover:bg-gray-200 transition"
+            >
+              {isFinished ? 'Voir les résultats' : 'Suivant'}
+            </button>
           )}
         </main>
+
+        {/* Résumé fin de session */}
+        {isFinished && (
+          <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
+            <div className="bg-gray-900 rounded-2xl p-8 max-w-sm w-full text-center space-y-6">
+              <h2 className="text-2xl font-bold">Session terminée</h2>
+              <div className="flex justify-center gap-8">
+                <div>
+                  <p className="text-3xl font-bold text-green-400">{solved}</p>
+                  <p className="text-sm text-gray-400">réussis</p>
+                </div>
+                <div>
+                  <p className="text-3xl font-bold text-red-400">{failed}</p>
+                  <p className="text-sm text-gray-400">ratés</p>
+                </div>
+              </div>
+              <p className="text-gray-400">
+                {solved > failed
+                  ? 'Bien joué !'
+                  : solved === failed
+                    ? 'Pas mal, continue !'
+                    : 'Continue à bosser, ça va venir.'}
+              </p>
+              <button
+                onClick={endSession}
+                className="bg-white text-gray-900 font-semibold px-6 py-3 rounded-lg hover:bg-gray-200 transition w-full"
+              >
+                Retour
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     )
   }
 
+  // === LOBBY VIEW ===
   return (
     <div className="min-h-screen bg-gray-950 text-white">
       <header className="border-b border-gray-800 px-6 py-4 flex items-center justify-between">
@@ -156,77 +252,62 @@ export default function Training() {
         </div>
       </header>
 
-      <main className="max-w-4xl mx-auto px-6 py-8">
-        <div className="flex items-center justify-between mb-6">
-          <h2 className="text-2xl font-bold">Exercices</h2>
-          <div className="flex gap-2">
-            {[
-              { key: 'all', label: 'Tous' },
-              { key: 'unsolved', label: 'Non résolus' },
-              { key: 'solved', label: 'Résolus' },
-              { key: 'TACTICAL_MISS', label: 'Tactique' },
-              { key: 'OPENING_DEVIATION', label: 'Ouverture' },
-              { key: 'ENDGAME_ERROR', label: 'Finale' },
-            ].map((f) => (
-              <button
-                key={f.key}
-                onClick={() => setFilter(f.key)}
-                className={`px-3 py-1 rounded-lg text-sm transition ${
-                  filter === f.key
-                    ? 'bg-white text-gray-900'
-                    : 'bg-gray-800 text-gray-400 hover:text-white'
-                }`}
-              >
-                {f.label}
-              </button>
-            ))}
-          </div>
-        </div>
-
+      <main className="max-w-lg mx-auto px-6 py-16 text-center space-y-10">
         {loading ? (
           <p className="text-gray-400">Chargement...</p>
-        ) : filtered.length === 0 ? (
-          <p className="text-gray-400">
-            Aucun exercice. Lance un fetch de parties depuis le dashboard pour en générer.
-          </p>
-        ) : (
-          <div className="grid gap-3">
-            {filtered.map((exercise) => (
-              <button
-                key={exercise.id}
-                onClick={() => startExercise(exercise)}
-                className="flex items-center justify-between bg-gray-900 hover:bg-gray-800 rounded-lg px-5 py-4 transition text-left"
-              >
-                <div className="flex items-center gap-4">
-                  <span
-                    className={`w-2 h-2 rounded-full ${
-                      exercise.completed ? 'bg-green-500' : 'bg-gray-600'
-                    }`}
-                  />
-                  <div>
-                    <p className="font-medium">
-                      {TYPE_LABELS[exercise.type] || exercise.type}
-                    </p>
-                    <p className="text-sm text-gray-500">
-                      {MISTAKE_LABELS[exercise.mistake.type]} — coup {exercise.mistake.moveNumber}
-                      {exercise.mistake.theme && ` — ${exercise.mistake.theme}`}
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-4 text-sm">
-                  <span className="text-gray-500">
-                    -{exercise.mistake.evalLoss}cp
-                  </span>
-                  {exercise.attempts > 0 && (
-                    <span className="text-gray-600">
-                      {exercise.attempts} essai{exercise.attempts > 1 ? 's' : ''}
-                    </span>
-                  )}
-                </div>
-              </button>
-            ))}
+        ) : unsolvedCount === 0 ? (
+          <div className="space-y-4">
+            <p className="text-gray-400 text-lg">
+              {exercises.length === 0
+                ? "Aucun exercice disponible. Importe des parties depuis le dashboard."
+                : "Tous les exercices sont résolus. Importe de nouvelles parties !"}
+            </p>
+            <Link
+              to="/"
+              className="inline-block bg-white text-gray-900 font-semibold px-6 py-3 rounded-lg hover:bg-gray-200 transition"
+            >
+              Aller au dashboard
+            </Link>
           </div>
+        ) : (
+          <>
+            <div>
+              <h2 className="text-3xl font-bold mb-2">Prêt à t'entraîner ?</h2>
+              <p className="text-gray-400">
+                {unsolvedCount} exercice{unsolvedCount > 1 ? 's' : ''} à faire
+                {solvedCount > 0 && ` — ${solvedCount} déjà résolus`}
+              </p>
+            </div>
+
+            <div className="space-y-3">
+              <p className="text-sm text-gray-500 mb-4">Choisis la taille de ta session</p>
+
+              {[5, 10, 20].map((count) => (
+                <button
+                  key={count}
+                  onClick={() => startSession(count)}
+                  disabled={unsolvedCount === 0}
+                  className="w-full bg-gray-900 hover:bg-gray-800 py-4 rounded-xl transition text-lg font-medium disabled:opacity-50"
+                >
+                  {Math.min(count, unsolvedCount)} exercice{Math.min(count, unsolvedCount) > 1 ? 's' : ''}
+                  {count > unsolvedCount && ` (${unsolvedCount} dispo)`}
+                </button>
+              ))}
+
+              {unsolvedCount > 20 && (
+                <button
+                  onClick={() => startSession(unsolvedCount)}
+                  className="w-full bg-gray-900 hover:bg-gray-800 py-4 rounded-xl transition text-lg font-medium"
+                >
+                  Tout faire ({unsolvedCount})
+                </button>
+              )}
+            </div>
+
+            <p className="text-xs text-gray-600">
+              Les exercices sont triés par sévérité — les plus grosses erreurs en premier
+            </p>
+          </>
         )}
       </main>
     </div>
