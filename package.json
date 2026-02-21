@@ -1,0 +1,16 @@
+{
+  "name": "chesstrainer",
+  "private": true,
+  "scripts": {
+    "dev:web": "pnpm --filter @chesstrainer/web dev",
+    "dev:api": "pnpm --filter @chesstrainer/api dev",
+    "dev": "pnpm run --parallel dev:web dev:api",
+    "build": "pnpm run --filter './apps/*' build",
+    "lint": "pnpm run --filter '*' lint",
+    "typecheck": "pnpm run --filter '*' typecheck"
+  },
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=9.0.0"
+  }
+}
