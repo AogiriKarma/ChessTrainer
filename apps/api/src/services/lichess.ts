@@ -12,9 +12,17 @@ export interface LichessGame {
 export async function fetchLichessGames(
   username: string,
   token?: string,
-  max = 50,
+  max?: number,
 ): Promise<LichessGame[]> {
-  const url = `${LICHESS_API}/games/user/${username}?max=${max}&evals=true&opening=true&clocks=true&pgnInJson=true`
+  const params = new URLSearchParams({
+    evals: 'true',
+    opening: 'true',
+    clocks: 'true',
+    pgnInJson: 'true',
+  })
+  if (max) params.set('max', max.toString())
+
+  const url = `${LICHESS_API}/games/user/${username}?${params}`
 
   const headers: Record<string, string> = {
     Accept: 'application/x-ndjson',
